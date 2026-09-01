@@ -1,0 +1,4 @@
+# app/src/main/resources/META-INF/xposed/scope.list
+# ⚠️ 解析规则与 java_init.list 不同：不 trim、不过滤空行、不支持 # 注释。
+# 每行一个目标包名；行尾不要带空格。
+{{TARGET_PACKAGE}}

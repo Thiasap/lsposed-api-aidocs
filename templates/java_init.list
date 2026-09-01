@@ -1,0 +1,4 @@
+# app/src/main/resources/META-INF/xposed/java_init.list
+# 每行一个入口类 FQCN；支持 trim/空行/# 注释。
+# ⚠️ 要热重载：本文件必须恰好一行（唯一 Java 入口类）。
+{{PACKAGE_NAME}}.{{MODULE_CLASS}}

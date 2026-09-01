@@ -1,0 +1,9 @@
+# app/src/main/resources/META-INF/xposed/module.prop
+# Java Properties 格式。minApiVersion/targetApiVersion 必需；staticScope 必须小写 "true"。
+# 若使用 102-only API（setId/getId/replaceHook/detach/onHotReloading/onHotReloaded/getRunningTargets/hotReloadModule），
+# minApiVersion 必须写 102，否则 XposedNewApi lint 报 ERROR（或代码里加 getApiVersion() >= 102 守卫）。
+minApiVersion=102
+targetApiVersion=102
+staticScope=true
+# 启用热重载（App 更新自动触发；仍需 onHotReloading 返回 true）时才加下一行：
+# autoHotReload=true
