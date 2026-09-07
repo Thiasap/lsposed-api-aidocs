@@ -6,7 +6,7 @@
 > **交叉引用**：→ 见 `01-quick-reference.md`、`02-project-scaffold.md`（工程搭建）、`04-lifecycle-and-patterns.md`（生命周期模式）、`05-pitfalls.md`（坑点）、`08-service-and-advanced.md`（XposedService / 热重载 / Native Hook）
 
 **基准**：`io.github.libxposed:api:102.0.0`（tag `102.0.0`，commit `45e7c5c`，2026-06-13）。
-**可信度标注**：`【一手·源码】` = 直接读 libxposed 仓库 `.java` 源码 / Javadoc；`【一手·文档】` = 官方 Wiki / README；`【二手】` = 镜像站 / 第三方；`【推断】` = 无直接来源，由编写者推导。
+**可信度标注**：`【一手·源码】` = 直接读 libxposed 仓库 `.java` 源码 / Javadoc；`【一手·文档】` = 官方 Wiki / README；`【二手】` = 非官方一手来源（第三方博客 / 社区整理）；`【推断】` = 无直接来源，由编写者推导。
 
 > **三条不可违背的基准**（贯穿全册）：
 > 1. **只写 API 102**。API 100/101 的废弃模型不作为可选写法介绍，仅在 §15 用「⚠️ 已移除 / 已变更」点名，目的是防止 Agent 被旧教程误导。
@@ -101,7 +101,7 @@ if (getFrameworkVersion().equals("2.2.0")) { ... }       // 禁止：绑定发�
 ```
 
 > ⚠️ `XposedInterface.API_102` 与 `XposedService.API_102` 是**两个不同类里的不同常量**，语义独立（前者 = libxposed 模块 API 版本，后者 = service IPC 版本）。不要交叉使用。
-> ⚠️ 两条 LSPosed 2.x 版本号互相冲突的线：**Vector 线**（`JingMatrix/Vector`，v2.0=API 100 / v2.1=API 101 / v2.2=API 102）与 **lsposed.cn 镜像线**（v2.0.x~v2.1.1，其中 v2.1.0 起实现 API 102）。镜像线的 "2.1" ≠ Vector 的 "2.1"（后者是 API 101）。这正是禁止比较版本字符串的现实原因。【一手·源码】+【二手】
+> ⚠️ 社区分支 `JingMatrix/Vector` 的版本号自成体系（v2.0=API 100 / v2.1=API 101 / v2.2=API 102），与官方版本线（v2.0.2 ~ v2.2.0，v2.1.0 起实现 API 102）**不是同一套编号**——双方的 "2.1" 含义不同。这正是禁止比较版本字符串的现实原因。
 
 ### 2.2 优先级常量
 
@@ -1256,13 +1256,11 @@ if (getApiVersion() >= XposedInterface.API_102) { ... }        // ② 运行时�
 
 ## 未验证 / 未获取到
 
-- **LSPosed v2.x 官方 release notes 全部未获取到**：`GET /repos/LSPosed/LSPosed/releases` 与 `/tags` 最新条目仍是 `v1.9.2`（2023-10-11），`v2.0.2` / `v2.1.1` / `v2.2.0` / `v2.3.0` 均 404。本册**不引用任何 v2.x changelog 作为硬约束**。
 - **`deoptimize()` 的内部实现**（ART JIT 层还是 dex2oat 层、是否对已编译的 oat 生效）未从源码确认。
 - **同优先级 hook 的 tie-break 规则**未见任何官方明文，§2.2 中的"顺序未定义"为【推断】。
 - **`log()` 的输出是否同时进 logcat** 未确认（Javadoc 只说 "Writes a message to the Xposed log"）。
 - **宿主侧对 `getRemotePreferences` 写入的具体失败形态**（静默失败 vs 抛异常）未取到一手证据，社区两说并存 → 本册一律按「只读」处理。
-- **`module.prop` 的 `autoHotReload` 与 `exceptionMode` 的框架侧解析代码行**未取到；语义来自 `package-info.java` 与官方示例。
+- **`module.prop` 的 `autoHotReload` 与 `exceptionMode` 的框架侧解析代码行**未取到；语义已由 Javadoc（Module Configuration 节）与官方指南确证。
 - **`proceedWith` 的 Javadoc 澄清**（commit `495ca5d`，2026-08-27）晚于 102.0.0 tag，§4.6 采用的是 master 措辞；102.0.0 原文更简略，行为一致但**措辞差异未逐字比对**。
-- **dokka Javadoc 主站** `libxposed.github.io/api/` 不可达（`fetch failed`）。本册全部 API 事实取自 GitHub 源码原文，可信度 ≥ dokka。
 - **`IXposedService.aidl` 的完整方法定义**仅从 `XposedService` 使用侧反推（不影响本册结论）。
-- **每个方法的最大回调数量上限的具体数值**未获取到（只有镜像站的定性描述）。
+- **每个方法的最大回调数量上限的具体数值**未获取到（官方 changelog v2.0.2 仅定性描述"减少"）。

@@ -7,7 +7,7 @@
 
 **基准**：`io.github.libxposed:api:102.0.0` / `io.github.libxposed:service:102.0.0`。本册只写 API 102；一切环境判断走运行时探测，禁止比较框架版本字符串。
 
-**可信度声明（适用于本册全部表格行）**：除显式标注外，本册每一行均为 `【一手·源码】`（`libxposed/api`、`libxposed/service`、`libxposed/example`、`libxposed/lint` 源码与 Javadoc）或 `【一手·文档】`（LSPosed 官方 Wiki）。逐行的来源举证与 Javadoc 原文 → 见 `03-api-reference.md`、`08-service-and-advanced.md`。标注为 `【推断】` 的条目：本册 §4 的"同优先级 hook 顺序未定义"注、本册 §5 的"回调异常被静默吞"注。本册**不引用任何 LSPosed v2.x changelog**（GitHub 上不存在，最新 tag 为 v1.9.2）。
+**可信度声明（适用于本册全部表格行）**：除显式标注外，本册每一行均为 `【一手·源码】`（`libxposed/api`、`libxposed/service`、`libxposed/example`、`libxposed/lint` 源码与 Javadoc）或 `【一手·文档】`（LSPosed 官方 Wiki）。逐行的来源举证与 Javadoc 原文 → 见 `03-api-reference.md`、`08-service-and-advanced.md`。标注为 `【推断】` 的条目：本册 §4 的"同优先级 hook 顺序未定义"注、本册 §5 的"回调异常被静默吞"注。本册基准为 libxposed 源码与官方 Wiki；涉及框架行为的版本事实引用官方 changelog（v2.0.2 ~ v2.2.0）。**公开 GitHub tag（v1.9.2）不代表框架当前能力**，禁止据此判断。
 
 ---
 
@@ -246,5 +246,5 @@ staticScope=true
 
 ## 未验证 / 未获取到
 
-- `module.prop` 的 `autoHotReload` 与 `exceptionMode` 在框架侧的**具体解析代码行**未取到（语义来自 `package-info.java` 与官方示例）。
+- `module.prop` 的 `autoHotReload` 与 `exceptionMode` 在框架侧的**具体解析代码行**未取到（语义已由 Javadoc「Module Configuration」节与官方指南确证）。
 - `scope.list` 是否会导致作用域外回调被过滤：源码只确证它作为初始建议值被读入，与「回调会超出 scope」的 Javadoc 并存，两者的优先级关系未取到一手说明。`getRemotePreferences` 在宿主侧写入时的**具体失败形态**（静默失败 vs 抛异常）也未取到一手证据，社区两说并存 → 一律按「只读」处理。

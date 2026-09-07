@@ -169,7 +169,7 @@ autoHotReload=true
 | `minApiVersion` | ✅ | 框架 API 版本低于此值则拒绝加载 | wiki + `package-info.java`（"Required properties"） |
 | `targetApiVersion` | ✅ | 目标 API 版本。**≥102 触发行为变更：禁止调用 legacy `de.robv.android.xposed` API** | `XposedInterface.API_102` Javadoc |
 | `staticScope` | 可选 | `true` = 作用域固定，用户不能把模块应用到清单之外 | `package-info.java` |
-| `autoHotReload` | 可选 | App 更新后自动触发热重载；**最终仍以 `onHotReloading()` 返回 `true` 为准** | `package-info.java`；wiki 字段表未收录 |
+| `autoHotReload` | 可选 | App 更新后自动触发热重载；**最终仍以 `onHotReloading()` 返回 `true` 为准** | Javadoc（Module Configuration 节）；官方 wiki 指南字段表未收录 |
 | `exceptionMode` | 可选 | `protective`（默认）/ `passthrough`；`ExceptionMode.DEFAULT` 的全局来源 | `package-info.java` |
 
 **框架侧解析的 5 条精确语义**【一手·源码】（`ModuleUtil.java`）：

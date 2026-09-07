@@ -146,53 +146,43 @@ hook(targetMethod).intercept(chain -> {
 
 ---
 
-## 3. New XSharedPreferences 废弃时间表（【一手·changelog v2.2.0】）
+## 7. New XSharedPreferences 的现状与迁移
 
-> **重要**：v2.2.0 changelog 明确宣布 New XSharedPreferences (NSP) 将于 v2.3.0 正式移除。所有 Legacy 模块必须在此日期前完成迁移。
+> **重要**：v2.2.0 官方 changelog 宣布 New XSharedPreferences (NSP) **计划于 v2.3.0 正式移除**，并自 v2.2.0 起对有兼容风险的模块显示废弃警告。NSP 依赖 `MODE_WORLD_READABLE`，这本身就是被 Android 淘汰的机制，**Legacy 模块应尽快迁移到 Remote Preferences**。
 
-### 3.1 废弃机制
+### 7.1 废弃机制
 
-- **判定逻辑**：框架检查模块是否同时满足以下两个条件：
-  1. 模块声明支持 NSP（`AndroidManifest.xml` 中存在 `xposedsharedprefs` 元数据）。
-  2. 模块的偏好设置文件存在 `others` 可读的 XML（即 `MODE_WORLD_READABLE`）。
-- **表现形式**：满足条件的模块在 LSPosed 管理器页面显示"废弃警告"，提示用户该模块存在兼容风险。
+- **判定逻辑**：框架检查模块是否同时满足：① `AndroidManifest.xml` 中存在 `xposedsharedprefs` 元数据；② 偏好设置文件为 `others` 可读（`MODE_WORLD_READABLE`）。
+- **表现形式**：满足条件的模块在管理器页面显示"废弃警告"。
 
-### 3.2 迁移方案（二选一）
+### 7.2 迁移方案（二选一）
 
 #### 方案 A：迁移到 libxposed API 102（推荐）
 
-- 完全放弃 NSP，改用 API 102 的 `RemotePreferences`（实现 `SharedPreferences` 接口，支持变更监听）。
+- 放弃 NSP，改用 `RemotePreferences`（实现 `SharedPreferences` 接口，支持变更监听）。
 - 删除 `AndroidManifest.xml` 中的 `xposedsharedprefs` 元数据。
 - 使用 `io.github.libxposed:service:102.0.0` 的 `XposedService.getRemotePreferences()`。
 - 详见 `08-service-and-advanced.md §1`。
 
 #### 方案 B：保持 Legacy 但消除警告
 
-- 将 `module.prop` 中的 `xposedminversion` 设置为 `82`（NSP 引入版本）。
+- 在 `AndroidManifest.xml` 中把 `xposedminversion` meta-data 设置为 `82`（NSP 引入版本）。
 - 删除 `AndroidManifest.xml` 中的 `xposedsharedprefs` 元数据（框架不再识别此标志）。
-- 确保偏好设置文件权限为 `MODE_PRIVATE`（不再依赖 `MODE_WORLD_READABLE`）。
-- **注意**：此方案仅消除警告，不解决 NSP 在 v2.3.0 被移除后的根本问题。
+- 确保偏好设置文件权限为 `MODE_PRIVATE`，不再依赖 `MODE_WORLD_READABLE`。
+- **注意**：此方案只消除当前警告，NSP 仍将在 v2.3.0 被移除。
 
-### 3.3 时间线
-
-| 版本 | 事件 |
-|---|---|
-| v2.1.0 | 原计划废弃 NSP，推迟到 v2.2.0 |
-| v2.2.0 | 正式加入废弃警告机制，宣布 v2.3.0 移除 |
-| **v2.3.0** | **NSP 正式移除**，使用 NSP 的 Legacy 模块将无法读取偏好设置 |
-
-### 3.4 Agent 迁移检查清单
+### 7.3 Agent 迁移检查清单
 
 - [ ] 检查 `AndroidManifest.xml` 是否存在 `<meta-data android:name="xposedsharedprefs" android:value="true" />`。
-- [ ] 若存在，选择方案 A（迁移到 libxposed API 102）或方案 B（设置 `xposedminversion=82` 并删除元数据）。
-- [ ] 若选择方案 A，将所有 `XSharedPreferences` 调用替换为 `XposedService.getRemotePreferences()`。
-- [ ] 若选择方案 B，在 `module.prop` 中添加 `xposedminversion=82`。
-- [ ] 测试模块在 v2.2.0 框架下不再显示废弃警告。
+- [ ] 若存在，选方案 A（迁移到 libxposed API 102）或方案 B（`xposedminversion=82` + 删除 `xposedsharedprefs`）。
+- [ ] 若选方案 A，把所有 `XSharedPreferences` 调用替换为 `XposedService.getRemotePreferences()`。
+- [ ] 若选方案 B，`xposedminversion` 写在 **`AndroidManifest.xml` 的 meta-data**里——`module.prop` 没有这个字段。
+- [ ] 测试模块在目标框架下不再显示废弃警告。
 
 
-## 未验证 / 未获取到
+## 8. 未验证 / 未获取到
 
 - `IXposedHookCmdInit` 是否存在任何 Modern 对应物：wiki 与四个仓库中均未出现。
 - Legacy `XC_MethodHook` 的 after 逆序与 Modern 链序在**多 hook 同一方法**时的行为对照：Modern 链序有 Javadoc 保证，与 Legacy 的精确对齐关系未验证。
-- New XSharedPreferences 在镜像线 2.3.0 被移除的说法仅【二手】（`05-pitfalls.md #67`）。
+- New XSharedPreferences 的**正式移除**（计划于 v2.3.0）尚未落地，实现细节可能变动；v2.2.0 起的废弃警告机制已确认。
 - `getInvoker` 绕过访问检查是否同样绕过 hidden API 限制：未验证（推断只绕 Java 层访问检查）。

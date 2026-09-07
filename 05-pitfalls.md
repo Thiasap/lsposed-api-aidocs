@@ -7,14 +7,14 @@
 
 ---
 
-**约定**：标注省略时均为【一手·源码】（libxposed/api、libxposed/example 源码与 Javadoc + 真实 issue）；标 `【一手·release】` = LSPosed 官方 GitHub release notes；标 `【二手】` = 镜像站/第三方，需谨慎。Service/远程配置/native hook 专属坑位 → 见 `08-service-and-advanced.md`。
+**约定**：标注省略时均为【一手·源码】（libxposed/api、libxposed/example 源码与 Javadoc + 真实 issue）；标 `【一手·release】` = LSPosed 官方 GitHub release notes；标 `【一手·changelog】` = LSPosed 官方 changelog；标 `【二手】` = 非官方一手来源，需谨慎。Service/远程配置/native hook 专属坑位 → 见 `08-service-and-advanced.md`。
 
 ## B.1 生命周期（7 条）
 
 1. **构造器/字段初始化里调 `hook()`/`getXxx()`** → `IllegalStateException: Framework not attached`。每个 `XposedInterfaceWrapper` 方法都以 `ensureAttached()` 开头；框架在实例化后才调 `attachFramework()`。**修复**：初始化放 `onModuleLoaded` 及之后。
 2. **在 `onPackageLoaded` 里调 `getClassLoader()`** → 编译不过。`getClassLoader()` 只在 `PackageReadyParam` 上；`PackageLoadedParam` 只有 `getDefaultClassLoader()`（@RequiresApi(Q)）。
 3. **把 Hook 装在 `onModuleLoaded`** → `ClassNotFoundException` / hook 无效。该回调时没有任何 ClassLoader（`ModuleLoadedParam` 只有 `isSystemServer()`/`getProcessName()`）。App → `onPackageReady`；system_server → `onSystemServerStarting`。
-4. **找资源回调 API**（`handleInitPackageResources` 之类） → 不存在。**资源 Hook 已被官方移除**（wiki："Resource hooks are removed"；feature request `libxposed/api#58` closed/not_planned）。只能 hook 方法改 View/Context。
+4. **找资源回调 API**（`handleInitPackageResources` 之类） → 不存在。**libxposed API 102 没有资源 Hook API**（wiki："Resource hooks are removed"；feature request `libxposed/api#58` closed/not_planned）。只能 hook 方法改 View/Context。⚠️ 区分层面：框架对 **Legacy 模块的 `XResources`** 仍提供支持（v2.2.0 修复了 XML 重写长期失效的问题），但那是 Legacy 通道的事，API 102 模块用不到 → 见 `09-legacy-migration.md`。
 5. **依赖 `onPackageLoaded` 在 Android < 29 触发** → 永远不触发，无报错。`getDefaultClassLoader()` 带 `@RequiresApi(Q)`。低版本逻辑一律放 `onPackageReady`。
 6. **在 `onPackageReady` 之外取 `getAppComponentFactory()`** → Android < 28 取不到。带 `@RequiresApi(P)`，加 SDK_INT 守卫。
 7. **system_server 里用 `isFirstPackage()` 判断** → 恒为 false。Javadoc："the first callback is replaced by `onSystemServerStarting(...)`, so `param.isFirstPackage()` is never `true` here."
@@ -34,7 +34,15 @@
 15. **void 方法 lambda 编译错** → `Hooker.intercept` 返回 `Object`。`chain.proceed(); return null;`（官方注释："for void methods, it's needed to return null because Java doesn't support unit type"）。void/构造器的返回值被框架忽略。
 16. **`proceed()` 抛异常没接** → 异常冒到宿主，App 崩溃。**PROTECTIVE 只兜 hooker 自己抛的，`proceed()` 的异常永远传播**（Javadoc："Exceptions thrown by proceed will always be propagated"）。
 17. **`chain.getArgs().set(i, v)`** → `UnsupportedOperationException`。getArgs() 是**不可变 List**。改参数 → `chain.proceed(newArgs)`。
-18. **`getArg(i)` 越界/类型错** → `IndexOutOfBoundsException`/`ClassCastException`。注意 Kotlin `suspend`/默认参数多出参数、内部类方法首参是外部实例、static 方法无 this。用 `chain.getExecutable()` 打印签名自查。
+18. **`getArg(i)` 越界/类型错** → `IndexOutOfBoundsException`/`ClassCastException`。注意 Kotlin `suspend`/默认参数会多出参数、内部类方法首参是外部实例、static 方法无 this；多模块 hook 同一方法时参数还可能被上游 hooker 换成别的类型（v2.2.0 修复过链上参数类型转换缺陷，但旧框架仍会遇到）。用 `chain.getExecutable()` 打印签名自查，**强转前先 `instanceof`**：
+```java
+Object arg = chain.getArg(0);
+if (arg instanceof String) {
+    String s = (String) arg;
+} else {
+    log(Log.WARN, TAG, "unexpected arg type: " + arg);   // 降级，不要硬转
+}
+```
 19. **改参数标准姿势**：`Object[] args = chain.getArgs().toArray(); args[0] = v; return chain.proceed(args);`
 20. **改返回值标准姿势**：`Object r = chain.proceed(); return transform(r);`（不 return = 丢弃）。void/构造器 `proceed()` 恒返回 null。
 21. **Chain 存字段/跨线程/延迟用** → Javadoc 首句："Chain objects cannot be shared among threads or reused after `Hooker.intercept(Chain)` ends."。异步需求：先拷出 `getArgs()`/`getThisObject()`，不带 chain 进 Runnable。
@@ -81,11 +89,11 @@
 
 ## B.8 Android 版本与 ART（6 条）
 
-50. **兼容下限**：`api` 库 `minSdk=26`（Android 8.0）【一手·源码】；【二手】镜像线 v2.1.1 起框架最低 Android 9。按 **API 28** 规划下限稳妥。
+50. **兼容下限**：`api`/`service` 库 `minSdk=26`（Android 8.0），**低于 26 时 manifest merger 直接失败**【一手·源码】；框架自 v2.1.1 起最低支持 Android 9 (API 28)【一手·changelog v2.1.1】。→ **编译下限 26、运行下限 28**，模块按 28 规划。
 51. **Android 12+ 静态方法 hook 首次调用失效** → 【一手·release】v1.8.0 修复记录；Android 10+ 内联抑制机制不同。旧版框架上仍会遇到。
 52. **Android 13 DP1 系统框架 hook 失效**（`LSPosed#1675`，已修）→ 教训：**每次 Android 大版本升级后重验系统框架 hook**。
 53. **hidden API 保护**：`PROP_RT_API_PROTECTION` 置位 = 禁止反射/动态加载代码访问 Xposed API（v1.9.1 起默认开启）。模块必须**直接静态引用** libxposed API。
-54. **`targetApiVersion >= 102` 后调 Legacy API** → Javadoc："Libxposed modules can not call legacy `de.robv.android.xposed` APIs."。`de.robv.*` 全部禁止；找类/方法用 JDK 反射。
+54. **`targetApiVersion >= 102` 后调 Legacy API** → Javadoc："Libxposed modules can not call legacy `de.robv.android.xposed` APIs."。`de.robv.*` 全部禁止；找类/方法用 JDK 反射。反向同样成立：Legacy 模块禁止调用 `io.github.libxposed.*`；**`targetApiVersion = 101` 的模块不受此约束**（v2.0.3 起双向隔离）。违反的表现是"管理器显示模块已加载，但所有 hook 静默不生效"。
 55. **指望资源 Hook 回归** → 无（v1.6.x 曾有手动开关，现代 API 完全没有）。
 
 ## B.9 多进程（4 条）
@@ -116,13 +124,13 @@
 70. **不自己过滤包名** → Javadoc："every loaded package in that process will trigger callbacks… modules may receive callbacks **beyond** the originally scoped packages, so they should **always filter by process name and package name**."。每个 onPackageXXX 第一行过滤。
 71. **`staticScope` 写 `True`/`1`** → 不生效（全等比较字符串 `"true"`）。
 72. **`system`/`android` 语义**：现代模块中与管理器显示一致——`system`=system_server（`pkg=system`），`android`=系统对话框等进程（`ChooserActivity`/`ResolverActivity`，`proc=android:ui`）。`android` 包无代码但仍是合法作用域；全组件都在 system_server 的 `android.uid.system` 包必须用 `system` 作用域；`com.android.providers.settings` **不是**合法作用域目标（用 `system` + 等它的包加载事件）。
-73. **【二手】管理器作用域排序异常**（镜像线 v2.2.0 提到修复）→ 未获一手验证；排障时手动确认勾选状态，别依赖排序。
+73. **系统框架在模块作用域中的排序**曾异常（v2.2.0 修复）【一手·changelog v2.2.0】→ 排障时仍手动确认勾选状态，别依赖排序。
 
 ## B.13 安全与稳定（5 条）
 
 74. **回调抛异常的后果**：PROTECTIVE=吞掉记日志（App 不崩但逻辑静默失效）；PASSTHROUGH=直达调用方（崩溃）。生产 PROTECTIVE、开发 PASSTHROUGH。
 75. **拦截器里调被 hook 的方法** → 递归/回调放大。`getInvoker(m).invoke(...)` 默认 FULL 链含自己。原行为用 `setType(ORIGIN)`。框架有防无限递归兜底（【一手·release】v1.8.2）但别依赖。
-76. **【二手】每方法回调数量上限**（镜像线 v2.0.2"减少每个方法的最大回调数量"）→ 单方法别挂太多 hook；反复注册不 `setId()`/不 `unhook()` 会逼近上限 → "hook 突然不生效"。
+76. **每方法回调数量上限**（v2.0.2 起被降低，具体数值未公开）【一手·changelog v2.0.2】→ 单方法别挂太多 hook；反复注册不 `setId()`/不 `unhook()` 会逼近上限 → "hook 突然不生效"。
 77. **回调里做重活** → `intercept` 在**调用方线程**同步执行；高频主线程方法里 I/O/反射 → 掉帧 ANR。反射结果缓存；配置用缓存值 + 监听器。
 78. **捕获 `HookFailedError`** → Javadoc："hook failures are considered fatal framework bugs. Module developers should not attempt to catch this error… report the issue to the framework maintainers."。它继承 `Error`；`catch (Throwable)` 时要重新抛出它。
 
@@ -133,7 +141,7 @@
 81. **以为生命周期回调会重放（最大陷阱）** → Javadoc："Hot reload does not automatically replay this callback or package lifecycle callbacks"。`onHotReloaded` 默认实现**只做 unhook 全部旧 hook** → 不重写 = 热重载成功但功能全消失。
 82. **旧 HookHandle 三种处置**：`old.unhook()`（移除）/ `old.replaceHook(newHooker)`（原子替换：保留 executable/priority/exceptionMode/id，**调用成功后 old 失效**）/ 重新 `hook().setId(sameId)`（等价）。链是快照式："Replacing a hook while a call is running does not affect that in-flight call."
 83. **`setSavedInstanceState` 放旧 CL 对象** → `IllegalArgumentException`（框架检测）。只放 primitive/String/数组/框架 Bundle（classloader 中立值）。
-84. **`HotReloadResult.Status` 五态**：`SUCCEEDED`/`FAILED`（message null=旧代拒绝；非 null=重载异常诊断）/`UNSUPPORTED`（无恰好一个入口类等）/`IN_PROGRESS`/`PROCESS_DIED`。
+84. **`HotReloadResult.Status` 五态**：`SUCCEEDED`/`FAILED`（message null=旧代拒绝；非 null=重载异常诊断）/`UNSUPPORTED`（无恰好一个入口类等）/`IN_PROGRESS`/`PROCESS_DIED`。⚠️ 重载过程中若发生异常，旧版框架不会正确回滚状态，后续请求会被误判为"正在进行中"（v2.2.0 已修复）。因此 `onHotReloading` 返回 `false` 的条件要严格——关键依赖缺失时主动拒绝，别留下半初始化状态。
 85. **用热重载下发配置** → 反模式。Javadoc："It should not be used to propagate configuration changes. For configuration updates, use `getRemotePreferences(String)` and `OnSharedPreferenceChangeListener`."。且回调可能跑在 **Binder 线程**。
 
 ## B.15 其它（5 条）
@@ -166,70 +174,10 @@
 
 ---
 
-## C. v2.x 框架级陷阱（【一手·changelog】）
-
-> 以下坑点来自 v2.0.2~v2.2.0 官方 changelog 中修复的真实问题，Agent 生成代码时必须规避。
-
-### C.1 API 102 与 Legacy API 物理隔离（v2.0.3）
-
-**症状**：模块 `targetApiVersion=102`，但代码中混用了 `de.robv.android.xposed.*` 和 `io.github.libxposed.*`，管理器显示"模块已加载"但所有 hook 不生效。
-**原因**：v2.0.3 起实施物理级硬隔离。`targetApiVersion ≥ 102` 的模块调用 Legacy API 会被框架拦截并静默失败；反之 Legacy 模块调用 libxposed API 同样失败。
-**规避**：
-- `targetApiVersion ≥ 102` 的模块：**禁止** `import de.robv.android.xposed.*`，全部改用 `io.github.libxposed.*`。
-- Legacy 模块（`targetApiVersion ≤ 101`）：**禁止** `import io.github.libxposed.*`。
-- ProGuard 规则中不要 keep `de.robv.android.xposed.**`（API 102 模块）。
-
-### C.2 Hook 链参数类型转换问题（v2.2.0 修复）
-
-**症状**：多个模块 hook 同一方法时，`param.args[i]` 在某些情况下抛出 `ClassCastException` 或返回 `null`。
-**原因**：v2.2.0 之前的框架在 Hook 链传递参数时，对泛型擦除后的类型转换存在缺陷（如 `List<String>` 在链中传递时被错误转换为 `List<Object>`）。
-**规避**：
-- 在 `beforeHookedMethod`/`afterHookedMethod` 中对 `param.args[i]` 增加 `instanceof` 检查。
-- 若目标框架版本未知，使用防御性编程：
-```java
-Object arg = param.args[0];
-if (arg instanceof String) {
-    String str = (String) arg;
-    // ...
-}
-```
-- 推荐升级到 v2.2.0+ 以获取修复。
-
-### C.3 XposedHelpers.findField 行为异常（v2.1.1 修复）
-
-**症状**：`XposedHelpers.findField` 在某些 Android 版本上抛出非预期异常（如 `NoSuchFieldError` 而非 `NoSuchFieldException`）。
-**原因**：v2.1.1 之前的实现在反射查找字段时，对某些 ART 内部类的字段处理不当。
-**规避**：
-- 对 `findField` 调用统一使用 `try-catch` 包裹，同时捕获 `NoSuchFieldException` 和 `NoSuchFieldError`：
-```java
-try {
-    Field f = XposedHelpers.findField(clazz, "fieldName");
-} catch (NoSuchFieldException | NoSuchFieldError e) {
-    // 降级处理
-}
-```
-
-### C.4 热重载状态异常（v2.2.0 修复）
-
-**症状**：热重载失败后，模块状态异常（如 hook 残留但新逻辑未装），后续热重载请求被框架拒绝。
-**原因**：v2.2.0 之前，热重载过程中若发生异常（如新模块 ClassLoader 加载失败），框架未正确回滚状态，导致后续请求被误判为"正在进行中"。
-**规避**：
-- 在 `onHotReloading` 中返回 `false` 的条件要严格（如检测到关键依赖缺失时主动拒绝）。
-- 升级框架到 v2.2.0+。
-- 若检测到热重载后模块状态异常，可尝试通过 `XposedService.hotReloadModule()` 重新触发。
-
-### C.5 资源 Hook XML 重写长期失效（v2.2.0 修复）
-
-**症状**：使用 `XResources` hook XML 资源时，修改未生效。
-**原因**：v2.2.0 之前的框架在资源 Hook 的 XML 重写逻辑中存在长期未修复的 bug。
-**规避**：
-- 优先使用 Java 层 Hook（hook `Resources.getDrawable`/`getString` 等方法）替代 `XResources` XML 重写。
-- 若必须使用 XML 重写，升级框架到 v2.2.0+。
-
 ## 未验证 / 未获取到
 
-- #37 同优先级多模块的 tie-break 规则、#76 回调数量上限的具体数值：无一手来源（前者为【推断】，后者仅【二手】定性描述）。
+- #37 同优先级多模块的 tie-break 规则：无一手来源，属【推断】。
+- #76 回调数量上限：v2.0.2 确认"减少"，但**具体阈值未公开**。
 - #62 `log()` 是否同时进 logcat：未确认（Javadoc 只说 "Writes a message to the Xposed log"）。
 - #64 宿主侧对 `getRemotePreferences` **写入**的具体失败形态（静默失败 vs 抛异常）：无一手证据，一律按"只读"处理。
-- #73、#76 的镜像线 changelog 条目（v2.2.0 作用域排序、v2.0.2 回调上限）无法在 GitHub 交叉验证（官方仓库无 2.x release）。
 - #53 `PROP_RT_API_PROTECTION` 的具体拦截行为（抛什么异常/日志形态）未取到一手描述。

@@ -776,14 +776,28 @@ param.setSavedInstanceState(new MyModuleState());      // 旧 classloader 下创
 
 > ⚠️ 跨代状态**不要**用 `static` 字段：每个模块代有自己的 ClassLoader，`static` 是新代里的新字段，不是共享的。
 
-### 4.5 `HotReloadResult.Status` 五种状态
+### 4.5 `HotReloadResult` 与五种状态
 
-→ 见 §1.3.3 的表格。
+```java
+public record HotReloadResult(@NonNull Status status, @Nullable String message) {
+    public enum Status { SUCCEEDED, FAILED, UNSUPPORTED, IN_PROGRESS, PROCESS_DIED }
+}
+```
+
+| Status | 含义 | `message` |
+|---|---|---|
+| `SUCCEEDED` | 重载成功 | — |
+| `FAILED` | 旧模块拒绝重载，或重载过程抛异常 | `null` = 旧模块 `onHotReloading` 返回 `false`；非 null = 框架诊断串 |
+| `UNSUPPORTED` | 目标不支持热重载（模块未声明**恰好一个** Java 入口类，或框架无法提供有效新代） | — |
+| `IN_PROGRESS` | 该目标已在重载中（热重载按目标串行） | — |
+| `PROCESS_DIED` | 目标进程在重载完成前死亡 | — |
 
 **诊断规则**：
 - `FAILED` + `message == null` ⇒ 旧模块 `onHotReloading` 返回 `false`（**很可能你根本没重写它**）。
 - `FAILED` + `message != null` ⇒ 重载过程抛异常，message 是框架诊断串。
 - `UNSUPPORTED` ⇒ 检查 `java_init.list` 是否**恰好一行**（最常见问题）。
+
+结果经 `HotReloadCallback.onHotReloadResult(target, result)` 异步送达，回调发生在 **Binder 线程**。完整签名、`SecurityException` / `UnsupportedOperationException` 契约与调用示例 → 见 §1.3.3。
 
 ### 4.6 唯一 Java 入口类约束
 
@@ -806,102 +820,11 @@ Javadoc 明文（【一手·源码】）："Hot reload is supported only for mod
 
 ---
 
-
-
-### 4.5 XposedService 热重载 API（API 102，【一手·PR libxposed/api#62】）
-
-> 以下 API 在 `io.github.libxposed:service:102.0.0` 中新增，仅在模块 App 侧（非宿主进程）可用。
-
-#### 4.5.1 运行目标发现
-
-```java
-// XposedService 新增方法
-List<HookedTarget> getRunningTargets();
-```
-
-- 返回当前模块已注入的所有正在运行的进程列表。
-- `HookedTarget` 封装了 AIDL `HookedProcess`，隐藏了不透明的 target id，模块 App 无需关心底层标识。
-- **典型用途**：在模块 App 的 UI 中展示"当前注入到哪些进程"，或判断是否需要触发热重载。
-
-#### 4.5.2 热重载请求
-
-```java
-// XposedService 新增方法
-void hotReloadModule(HookedTarget target, Bundle extras, HotReloadCallback callback);
-```
-
-- 向指定进程请求热重载当前模块。
-- `extras` 会传递到新代入口类的 `onHotReloaded(HotReloadedParam)` 的 `param.getExtras()` 中。
-- `HotReloadCallback` 提供异步结果回调：
-
-```java
-public interface HotReloadCallback {
-    void onResult(HotReloadResult result);
-}
-
-public final class HotReloadResult {
-    public enum Status {
-        SUCCESS,           // 热重载成功
-        UNSUPPORTED,       // 框架不支持或拒绝（如多入口类、进程正在退出）
-        MODULE_NOT_LOADED, // 目标进程未加载该模块
-        INTERNAL_ERROR     // 框架内部错误
-    }
-    
-    public Status getStatus();
-    public String getMessage(); // 详细错误信息（Status != SUCCESS 时）
-}
-```
-
-- **关键约束**（【一手·PR libxposed/api#62】）：
-  - `hotReloadModule` **不是**用于传播配置变更的。配置更新应使用 `RemotePreferences` 和监听器。
-  - 此 API 仅用于模块 App 更新后（如 APK 升级）主动通知框架加载新代模块代码。
-  - 框架可能因多种原因拒绝请求（如目标进程正在退出、内存不足），模块应处理 `UNSUPPORTED` 状态。
-
-#### 4.5.3 完整使用示例
-
-```java
-// 模块 App 侧：在用户点击"应用更新"按钮后触发
-public void applyModuleUpdate() {
-    XposedServiceHelper.registerListener(new XposedServiceHelper.OnServiceListener() {
-        @Override
-        public void onServiceBind(@NonNull XposedService service) {
-            // 1. 获取当前运行目标
-            List<HookedTarget> targets = service.getRunningTargets();
-            
-            // 2. 逐个触发热重载
-            for (HookedTarget target : targets) {
-                Bundle extras = new Bundle();
-                extras.putString("update_reason", "user_triggered");
-                
-                service.hotReloadModule(target, extras, new XposedService.HotReloadCallback() {
-                    @Override
-                    public void onResult(XposedService.HotReloadResult result) {
-                        switch (result.getStatus()) {
-                            case SUCCESS:
-                                Log.i(TAG, "Hot reload succeeded for " + target.getProcessName());
-                                break;
-                            case UNSUPPORTED:
-                                Log.w(TAG, "Hot reload unsupported: " + result.getMessage());
-                                // 降级：提示用户手动重启目标应用
-                                break;
-                            default:
-                                Log.e(TAG, "Hot reload failed: " + result.getStatus());
-                                break;
-                        }
-                    }
-                });
-            }
-        }
-    });
-}
-```
-
-### 4.6 detach() API（API 102，【一手·PR libxposed/api#62】）
+### 4.8 detach()（API 102）
 
 > 允许当前入口类停止接收后续生命周期回调，同时保留已安装的 hook。
 
 ```java
-// XposedInterfaceWrapper 新增方法
 void detach();
 ```
 
@@ -1060,45 +983,46 @@ override fun onPackageReady(param: PackageReadyParam) {
 | **P2** 自行集成 Dobby / AndHook / LSPlant | 静态链接 hook 库，`onPackageReady` 后自行 hook | 完全自主，跨框架一致性好 | 增大体积；需自己处理架构适配（arm64/x86_64、16KB 页对齐）；框架不帮你做 `do_dlopen` 拦截与「库加载回调」 |
 | **P3** 只 hook JNI / 系统函数，走 `JNI_OnLoad` | 在 `JNI_OnLoad` 里拿 `JavaVM` → `JNIEnv` → hook `env->functions->FindClass` | 不需要任何 hook 库 | 只能 hook 通过 JNI 函数表访问的调用，覆盖面窄 |
 
-### 5.3 字段名是 `hookFunc`（不是 `hook_func`）
+### 5.3 `NativeAPIEntries` 字段布局
 
-Vector 现行 ABI（`native/include/core/native_api.h`）原文：
+主线 LSPosed 源码（`core/src/main/jni/src/native_api.h`）与社区分支 Vector（`native/include/core/native_api.h`）完全一致：
 
 ```cpp
 struct NativeAPIEntries {
     uint32_t version;          // The version of this API struct.
-    HookFunType hookFunc;      // camelCase，不再是 hook_func
-    UnhookFunType unhookFunc;  // camelCase，不再是 unhook_func
+    HookFunType hookFunc;      // camelCase
+    UnhookFunType unhookFunc;  // camelCase
 };
 ```
 
-`HookFunType` / `UnhookFunType` / `NativeOnModuleLoaded` / `NativeInit` 四个 typedef **保持一致**。
+`HookFunType` / `UnhookFunType` / `NativeOnModuleLoaded` / `NativeInit` 四个 typedef 保持一致。【一手·源码】
 
-> ⚠️ **如果你抄 LSPosed wiki 的 `entries->hook_func` 去对接 Vector，编译期就会失败。** 以 `native_api.h` 为准。【一手·源码】
+> ⚠️ 官方 Wiki《Native-Hook》页写的是 `hook_func` / `unhook_func`（正文一处甚至写作 `hook_fun`，自身前后矛盾），与两份源码均不符。写模块时**以目标框架自带的 `native_api.h` 为准**；使用 `entries->hook_func` 对接现行 ABI 会编译失败。
 
-### 5.4 Wiki《Native-Hook》页面的过时点清单
+### 5.4 官方 Wiki《Native-Hook》页的适用范围
 
-来源：<https://github.com/LSPosed/LSPosed/wiki/Native-Hook>（Wang Han 编辑于 2026-08-12，3 次修订）。
+来源：<https://github.com/LSPosed/LSPosed/wiki/Native-Hook>（最后编辑 2026-08-12）。
 
-> ⚠️ **背景**：`LSPosed/LSPosed` 仓库自 **2024-01-07** 起停止提交（最后提交 `df74d83`），README 仍声明支持 Android 8.1~14。活跃继任者是 **`JingMatrix/Vector`**（支持 Android 8.1~17 Beta）。该 wiki 页描述的是 2024 年冻结时的状态。
+该页描述的是 `LSPosed/LSPosed` 仓库于 2024-01-07 停止公开提交时（最后提交 `df74d83`）的状态，其 README 仍声明支持 Android 8.1~14。主线此后继续推进（当前 v2.2.0），通过官方渠道发布而非 GitHub，因此**该页落后于主线，与主线不符处以本册为准**。
 
-| # | 位置 | 过时内容 | 现代正确形式 |
-|---|---|---|---|
-| N-1 | Tell Entries to Framework | `assets/native_init` | **`META-INF/xposed/native_init.list`** |
-| N-2 | Simple Example | `assets/native_init` | 同上 |
-| N-3 | Simple Example | `assets/xposed_init` | **`META-INF/xposed/java_init.list`** |
-| N-4 | Simple Example | `IXposedHookLoadPackage` / `handleLoadPackage` | **`XposedModule` / `onPackageReady`** |
-| N-5 | Header File | `hook_func` / `unhook_func` | **`hookFunc` / `unhookFunc`**（Vector `native_api.h`） |
-| N-6 | Entries 正文 | `hook_fun`（与它自己 header 片段的 `hook_func` 都自相矛盾） | **`hookFunc`** |
-| — | AndroidManifest | `android:multiArch` / `android:extractNativeLibs` | **未获取到**现代官方要求，需实测 |
+**已过时（不要照抄）**：
 
-**该页仍然有效的部分**（不要一并否掉）：
+| 位置 | Wiki 写法 | 现行写法 |
+|---|---|---|
+| Tell Entries to Framework / Simple Example | `assets/native_init` | `META-INF/xposed/native_init.list` |
+| Simple Example | `assets/xposed_init` | `META-INF/xposed/java_init.list` |
+| Simple Example | `IXposedHookLoadPackage` / `handleLoadPackage` | `XposedModule` / `onPackageReady` |
+| Header File / Entries 正文 | `hook_func` / `unhook_func` / `hook_fun` | `hookFunc` / `unhookFunc`（主线与 Vector 源码一致，→ §5.3） |
 
-- ✅ 机制描述："Whenever a new native library loaded, LSPosed will invoke a callback of the module..." —— 与 Vector 现行实现一致。
-- ✅ 入口名 `native_init`、三个 attribute（`extern "C"` + `[[gnu::visibility("default")]]` + `[[gnu::used]]`）、返回值语义。
-- ✅ "必须手动 `System.loadLibrary`" + 必须 try/catch。
-- ✅ 「库加载」回调 `NativeOnModuleLoaded(const char *name, void *handle)` 的语义。
-- ✅ JNIEnv Hooks 技巧（通用 NDK 技巧，与框架无关）。
+**仍然有效（不要一并否掉）**：
+
+- 机制描述："Whenever a new native library loaded, LSPosed will invoke a callback of the module..." —— 与现行实现一致。
+- 入口名 `native_init`、三个 attribute（`extern "C"` + `[[gnu::visibility("default")]]` + `[[gnu::used]]`）、返回值语义。
+- "必须手动 `System.loadLibrary`" + 必须 try/catch。
+- 「库加载」回调 `NativeOnModuleLoaded(const char *name, void *handle)` 的语义。
+- JNIEnv Hooks 技巧（通用 NDK 技巧，与框架无关）。
+
+**未覆盖**：`android:multiArch` / `android:extractNativeLibs` 的现代官方要求未获取到，需实测。
 
 ### 5.5 私有 ABI 风险 + 与热重载的交互
 
@@ -1129,10 +1053,10 @@ struct NativeAPIEntries {
   **架构师推断（【推断】，非文档结论）**：`XposedService` 的存在前提是"有一个独立的框架/管理器进程向模块的 exported provider 推 binder"。embedded 形态缺少这个推送方，因此 `onServiceBind` 极可能**永远不会被调用**。
   **工程应对**：把 `XposedService` 当作**可选增强**而非硬依赖 —— 所有相关 UI 与逻辑必须有 `mService == null` 的降级路径，且**绝不能**在 `onPackageReady` 等 hook 生命周期回调里等待 service。
   已确证的一手事实只有一条：**embedded 框架下 `XposedInterface` 的 remote preferences / remote files 抛 `UnsupportedOperationException`**（`XposedInterface.java` javadoc 原文）。
-- **`libxposed/helper` 的官方废弃声明原文**未获取到（`helper` 仓库 README 返回 404）。且 `libxposed/api` 与 `libxposed/service` 的 README「Related Projects」中**仍然**链接 `libxposed/helper` 并描述为 "Friendly development kit library" —— **README 未同步废弃状态**，属文档滞后。
+- **`libxposed/helper`**：仓库公开存在（libxposed org 共 5 仓库：api / service / example / lint / helper），最后代码提交 2023-02，此后休眠；**仓库没有 README.md**（此前"README 404"即因仓库本身无此文件，非仓库不存在）。官方开发指南（2026-08 修订）仍将其推荐为 XposedHelpers 的官方替代（"we will offer official libraries for a more friendly development kit. See libxposed/helper"），api / service 的 Related Projects 亦仍收录。**它未被废弃，但维护不活跃**——采用前需自行验证与 API 102 的兼容性。
 - **`META-INF/xposed/native_init.list` 的框架侧读取代码**未定位到具体源码行。路径本身有官方 Wiki 直接背书，但**未在框架源码中复验**。
 - **现代 API 下 `android:multiArch` / `android:extractNativeLibs` 的官方要求**未获取到 → 标注为**需实测**。
 - **Vector v2.2 Release Note 正文中 "IPC 接口移入 Vector 自有命名空间" 的原句**未检索到；实质内容在 PR #757（commit `abae837`）与 PR #861（commit `de6e250`）的 **commit message** 中。**对模块代码影响为零**：改的是 Vector 内部 manager↔daemon 的 AIDL（`org.lsposed.lspd.*` → `org.matrix.vector.ipc`），模块面对的 `io.github.libxposed.service` 命名空间未动。
 - **`IXposedService.aidl` 方法编号与 `HookedProcess.aidl`** 已取证，但 AIDL 是框架 ↔ service 的内部线协议，模块不需要接触。
-- **LSPosed v2.x 官方 release notes** 在 GitHub 上不存在（最新 tag `v1.9.2`，2023-10-11）。本册不引用任何 v2.x changelog 作为硬约束。
+- **GitHub Releases 停在 `v1.9.2`（2023-10-11），不代表框架当前能力**：框架通过官方渠道发布，本册涉及框架行为的版本事实引用官方 changelog（v2.0.2 ~ v2.2.0）。
 - **`RemotePreferences` 的 `getStringSet` 返回内部 Set 后 mutate 的实际持久化行为**未实测，结论由源码推导。

@@ -2,7 +2,7 @@
 
 > **基准**：`io.github.libxposed:api:102.0.0` / `io.github.libxposed:service:102.0.0`（2026-06 发布线）。
 > **读者**：开发 Xposed/LSPosed 插件模块的 AI Agent。
-> **四条全局基准**：① 只写 API 102（旧 API 仅在防误导处点名，完整对照见 09 册）；② 不绑定任何框架发行版——环境判断一律走运行时探测（`getApiVersion()` + `getFrameworkProperties()` 位掩码），禁止比较框架版本字符串；③ **v2.x 官方 changelog（lsposed.cn 发布线 + Vector v2.x release）作为一手事实源**，与 libxposed API/service 源码同等地位；④ 每条结论可溯源（【一手·源码】/【一手·文档】/【一手·changelog】/【二手】/【推断】五级标注，各分册末尾有「未验证」节）。
+> **四条全局基准**：① 只写 API 102（旧 API 仅在防误导处点名，完整对照见 09 册）；② 不绑定任何框架发行版——环境判断一律走运行时探测（`getApiVersion()` + `getFrameworkProperties()` 位掩码），禁止比较框架版本字符串；③ **官方 changelog（v2.0.2 ~ v2.2.0）与 libxposed API/service 源码同等地位，作为一手事实源**（→ §4）；④ 每条结论可溯源（【一手·源码】/【一手·文档】/【一手·changelog】/【二手】/【推断】五级标注，各分册末尾有「未验证」节）。
 
 ---
 
@@ -10,17 +10,17 @@
 
 | 分册 | 行数 | 定位 | 何时加载 |
 |---|---|---|---|
-| `00-INDEX.md`（本册） | 91 | 入口路由 | 总是 |
+| `00-INDEX.md`（本册） | 94 | 入口路由 | 总是 |
 | `01-quick-reference.md` | 250 | 10 张速查表：依赖/方法/常量/生命周期/声明文件/反向索引 | 写代码时手边常驻；查签名 |
 | `02-project-scaffold.md` | 308 | 工程搭建：Gradle、`META-INF/xposed/` 四文件、Manifest、ProGuard 三件套、构建失败对照 | 新建工程；模块不被识别；release 失效 |
-| `03-api-reference.md` | 1268 | 完整 API 参考：类型总览、Chain 心智模型、Invoker、deoptimize、已移除 API 清单 | 需要某个 API 的精确语义/Javadoc 依据 |
+| `03-api-reference.md` | 1266 | 完整 API 参考：类型总览、Chain 心智模型、Invoker、deoptimize、已移除 API 清单 | 需要某个 API 的精确语义/Javadoc 依据 |
 | `04-lifecycle-and-patterns.md` | 419 | 生命周期流程图、各回调操作边界、热重载完整语义（PR#62）、最小/生产级骨架、Kotlin 差异 | 写入口类前；决定逻辑放哪个回调 |
-| `05-pitfalls.md` | 235 | **95+ 条坑点**（20 组，含 v2.x 框架级陷阱）+ 症状→坑号快查索引 | 行为异常时检索；代码写完自查 |
-| `06-debugging-runbook.md` | 310 | 日志与指纹行、hook 验证、**S0-S9 排障决策树**、adb 速查、热重载验证清单 | 模块"不生效"类一切场景 |
-| `07-compat-matrix.md` | 233 | Root/Zygisk/免 Root/Android 版本/ABI 兼容事实 + 能力探测模板 | 评估目标设备；写环境分支 |
-| `08-service-and-advanced.md` | 1138 | XposedService 15 方法、Binder 推送机制、热重载（API 102）、Native Hook | 进阶主题：作用域申请/远程配置/热重载/native |
-| `09-legacy-migration.md` | 198 | Legacy(`de.robv`) → Modern 逐项映射 + 12 步迁移（唯一完整介绍旧 API 的分册） | 迁移旧模块；读懂网上 Legacy 教程 |
-| `10-agent-rules.md` | 396 | 机器可读 DO/DON'T 规则（D01-D22 / R01-R22 / 判定规则 J01-J08）+ 生成前 checklist | **生成代码前第一个加载** |
+| `05-pitfalls.md` | 183 | **90 条坑点**（15 组）+ 症状→坑号快查索引 | 行为异常时检索；代码写完自查 |
+| `06-debugging-runbook.md` | 312 | 日志与指纹行、hook 验证、**S0-S9 排障决策树**、adb 速查、热重载验证清单 | 模块"不生效"类一切场景 |
+| `07-compat-matrix.md` | 234 | Root/Zygisk/免 Root/Android 版本/ABI 兼容事实 + 能力探测模板 | 评估目标设备；写环境分支 |
+| `08-service-and-advanced.md` | 1062 | XposedService 15 方法、Binder 推送机制、热重载（API 102）、Native Hook | 进阶主题：作用域申请/远程配置/热重载/native |
+| `09-legacy-migration.md` | 188 | Legacy(`de.robv`) → Modern 逐项映射 + 12 步迁移（唯一完整介绍旧 API 的分册） | 迁移旧模块；读懂网上 Legacy 教程 |
+| `10-agent-rules.md` | 328 | 机器可读 DO/DON'T 规则（D01-D23 / R01-R23 / 判定规则 J01-J08）+ 生成前 checklist | **生成代码前第一个加载** |
 | `templates/` | 10 文件 | 可编译模块骨架（占位符 `{{PACKAGE_NAME}}`/`{{MODULE_CLASS}}`） | 从零生成工程 |
 
 ## 2. 按场景的加载顺序
@@ -67,25 +67,28 @@
 
 ## 4. 版本环境说明（影响事实判读）
 
-- `LSPosed/LSPosed` 官方 GitHub 停在 v1.9.2（2023-10）；**GitHub 上不存在任何 v2.x release**。
-- 活跃的 API 102 框架线：`JingMatrix/Vector` v2.2（API 102，Android 9~17）。
-- **镜像线（lsposed.cn 发布线）**：v2.0.2~v2.2.0，由原 LSPosed 团队核心成员维护的平行发布渠道。其 changelog 为【一手·changelog】事实源，涵盖 HyperOS 注入、A17 dex2oat 注入、New XSharedPreferences 废弃计划等 Vector release body 未详述的特性。
-- **API 102 强制隔离**（v2.0.3 起）：`targetApiVersion >= 102` 的模块禁止调用 Legacy API；Legacy 模块禁止调用 libxposed API。违反即加载失败。
-- 本知识库硬约束来自：① libxposed API/service/example 源码；② libxposed GitHub PR/commit 记录；③ 镜像线官方 changelog；④ Vector release body。
+- **LSPosed 主线当前为 v2.2.0**。官方 changelog（v2.0.2 / v2.0.3 / v2.1.0 / v2.1.1 / v2.2.0）为【一手·changelog】事实源，与 libxposed API/service 源码同等地位。
+- **GitHub Releases 停在 v1.9.2（2023-10），不代表框架当前能力**。主线通过官方渠道发布而非 GitHub Releases，因此禁止用 GitHub tag 或 `getFrameworkVersion()` 字符串推断框架能力，一律走运行时探测。
+- **社区分支 `JingMatrix/Vector`**（v2.2 = API 102，覆盖 Android 8.1~17）版本号自成体系，**它的 v2.2 与官方 v2.2.0 不是同一回事**。本知识库只把它的源码（如 `native_api.h`）当作 native ABI 的一手依据。
+- **API 102 强制隔离**（v2.0.3 起）：`targetApiVersion >= 102` 的模块禁止调用 Legacy API；Legacy 模块禁止调用 libxposed API；**101 模块不受影响**。违反即加载失败。
+- 本知识库硬约束来自：① libxposed API/service/example 源码；② libxposed GitHub PR/commit 记录；③ 官方 changelog；④ 框架侧解析源码（`ConfigFileManager` / `ModuleUtil` / `ObfuscationManager`）。
 
 ## 5. 知识库整体未决事项（跨分册汇总）
 
 - LSPatch/embedded 对 API 102 与 XposedService 的实际支持（仓库 404/停更）→ 仅【推断】降级策略（`08 册`未验证节）。
 - `module.prop` 的 `autoHotReload`/`exceptionMode` 框架侧解析源码行；`scope.list` 过滤语义与 Javadoc 的优先级关系。
 - 同优先级 hook 的 tie-break、每方法回调数量上限的具体数值、`log()` 是否进 logcat。
-- `libxposed/helper` 官方废弃声明原文（README 404，api/service 的 Related Projects 仍链接它——文档滞后）。
-- dokka 站点（`libxposed.github.io`）不可达；全部 API 事实取自 GitHub 源码原文（可信度更高）。
+- `libxposed/helper` 的可用性：仓库公开存在（libxposed org 共 5 仓库：api / service / example / lint / helper），但**无 README.md**，最后代码提交 2023-02（此后休眠）；官方开发指南（2026-08 修订）仍将其推荐为官方友好开发库。适合生产与否需自行评估。
 
-**已解决（v2.x changelog 转正）**：
-- HyperOS Runtime 注入、A17 dex2oat 包装器注入 → 确认为 v2.2.0 一手事实，强依赖兼容 Zygisk Next API 的实现（→ 见 `07 册 §1.4`）。
-- New XSharedPreferences 废弃时间表 → 确认为 v2.3.0 正式移除（→ 见 `09 册 §3`）。
-- 32 位 x86 架构移除 → v2.0.3 一手事实（→ 见 `07 册 §1.5`）。
-- 最低支持版本 → v2.1.1 起为 Android 9 (API 28)（→ 见 `07 册 §1.4`）。
-- API 102 与 Legacy API 的物理隔离 → v2.0.3 一手事实（→ 见 `10 册` 规则）。
+**由官方 changelog 确认的关键事实（【一手·changelog】）**：
 
-> 生效日期：2026-08-31。由工程保障团队基于 5 份一手采集稿（7193 行）汇编；关键决策请由人类开发者复核。
+| 版本 | 事实 | 去向 |
+|---|---|---|
+| v2.0.2 | 减少每个方法的最大回调数量；修复模块更新后极少数情况下 hook 未生效 | `05 册 #76`、`06 册 §S4` |
+| v2.0.3 | Legacy 与 libxposed API 物理隔离（101 模块不受影响）；移除 32 位 x86 | `10 册`、`07 册 §1.5` |
+| v2.1.0 | 实现 libxposed API 102；适配 Android 17 QPR1 Beta 4；提升被 hook 方法性能、优化去内联 | `07 册 §1.4` |
+| v2.1.1 | 最低支持版本提升至 Android 9 (API 28)；高级隐藏支持 A12+；修复 `XposedHelpers.findField`；修复 A17 下服务连接不兼容 | `07 册 §1.4`、`09 册` |
+| v2.2.0 | HyperOS Runtime 应用注入；A17+ dex2oat 包装器改为注入方式（均需兼容 Zygisk Next API 的实现）；修复资源 Hook XML 重写、热重载状态异常、Hook 链参数类型转换、系统框架作用域排序 | `07 册 §1.2/§1.4`、`05 册` |
+| v2.2.0 | New XSharedPreferences 计划于 v2.3.0 正式移除，v2.2.0 起对有风险的模块显示废弃警告 | `09 册 §7` |
+
+> 生效日期：2026-09-07。由工程保障团队基于 5 份一手采集稿汇编；关键决策请由人类开发者复核。

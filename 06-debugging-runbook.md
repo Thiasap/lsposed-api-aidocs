@@ -199,7 +199,7 @@ START：目标进程行为没变化
 ├─ S8 混淆（debug 正常/release 失效）？
 │   ├─ 三件套齐全？（→ 02 册 §6）
 │   ├─ packaging merges/excludes 两条成对？
-│   └─ 参考事故：Vector v2.2 修复"发布版无 hook"（R8 合并 XResources 致 findClass 永久失败，【一手】release body）
+│   └─ R8 合并资源曾导致 `findClass` 永久失败，表现为"发布版无 hook"。**release 必须真机验证**，不能只靠 debug 通过就发版
 │
 └─ S9 版本不匹配？
     ├─ 指纹行里 api= 的值 < minApiVersion ⇒ 模块被拒（几乎无日志，最阴险）
@@ -223,8 +223,10 @@ START：目标进程行为没变化
 ### A4.1 官方验证过的命令【一手】
 
 ```bash
-# 管理器通知不出来 → 把管理器装成普通应用（Vector 路径）
-adb shell su -c cp /data/adb/modules/zygisk_vector/manager.apk /data/local/tmp \
+# 管理器通知不出来 → 把管理器装成普通应用
+# 框架模块目录名随框架而异，先确认：
+adb shell "su -c 'ls /data/adb/modules/ | grep -iE \"lsposed|zygisk\"'"
+adb shell su -c cp /data/adb/modules/<框架模块目录>/manager.apk /data/local/tmp \
   && adb pull /data/local/tmp/manager.apk && adb install ./manager.apk
 
 # 命令行工具（管理器起不来时的兜底）——路径以 --help 实测为准
@@ -261,7 +263,7 @@ adb logcat -d > full.txt
 
 ### A4.4 安全模式
 
-冲突二分用**管理器 UI 逐个禁用模块 + 重启**（所有版本支持）。【二手】镜像线 v2.0.4 有"SystemUI 安全模式"；社区流传 `/data/adb/lspd/debug/safe_mode` 文件触发**未验证，不要盲信**。
+冲突二分用**管理器 UI 逐个禁用模块 + 重启**（所有版本支持）。框架对 System UI 的安全模式检测在 v2.1.1 优化过阈值、v2.2.0 修复了计数未在正常启动后重置的问题【一手·changelog】；社区流传的 `/data/adb/lspd/debug/safe_mode` 文件触发方式**未验证，不要盲信**。
 
 ---
 

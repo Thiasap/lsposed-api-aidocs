@@ -11,7 +11,7 @@ This is a structured knowledge base for LSPosed modern API (libxposed, `targetAp
 | `00-INDEX.md` | **Start here.** Loading protocol, file inventory, and cross-reference map. |
 | `01-quick-reference.md` | One-page cheat sheet: entry points, core APIs, and common patterns. |
 | `02-project-scaffold.md` | Gradle setup, Manifest metadata, and project structure. |
-| `03-api-reference.md` | Full API reference: `XposedHelpers`, `XposedBridge`, `MethodHookParam`, etc. |
+| `03-api-reference.md` | Full API reference: `XposedInterface`, Chain model, `Invoker`, `deoptimize`, removed-API list. |
 | `04-lifecycle-and-patterns.md` | Module lifecycle callbacks, hot-reload state management, and design patterns. |
 | `05-pitfalls.md` | Known traps, framework-level bugs, and version-specific gotchas. |
 | `06-debugging-runbook.md` | Debugging workflow: logs, error codes, and troubleshooting steps. |
@@ -24,7 +24,7 @@ This is a structured knowledge base for LSPosed modern API (libxposed, `targetAp
 ## Version Basis
 
 This knowledge base is aligned with:
-- **LSPosed framework**: v2.2.0 (including all v2.0.x/v2.1.x changelog facts as first-party sources)
+- **LSPosed framework**: v2.2.0 — official changelog (v2.0.2~v2.2.0) is a first-party fact source. GitHub Releases still lag at v1.9.2 and do **not** reflect current framework capability.
 - **libxposed API**: v102 (latest stable with hot-reload support)
 - **Android**: API 28 (Android 9) minimum, up to Android 17
 
@@ -60,7 +60,7 @@ Content is derived from LSPosed official documentation, GitHub repositories (lib
 ## 版本基准
 
 本知识库对齐以下版本：
-- **LSPosed 框架**：v2.2.0（包含所有 v2.0.x/v2.1.x 更新日志作为一手事实源）
+- **LSPosed 框架**：v2.2.0（官方 changelog v2.0.2~v2.2.0 为一手事实源；GitHub Releases 仍停在 v1.9.2，不代表当前能力）
 - **libxposed API**：v102（最新稳定版，支持热重载）
 - **Android**：最低 API 28（Android 9），最高至 Android 17
 

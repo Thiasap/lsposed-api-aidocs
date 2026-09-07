@@ -42,7 +42,7 @@
 
 - rule: D07
   forbid: 调用任何 de.robv.android.xposed.* Legacy API
-  because: targetApiVersion >= 102 时框架禁止（行为变更条款）
+  because: v2.0.3 起双向隔离——targetApiVersion >= 102 的模块禁止 Legacy API，Legacy 模块禁止 libxposed API（targetApiVersion=101 的模块不受此约束）
   ref: "05-pitfalls.md #54"
 
 - rule: D08
@@ -82,7 +82,7 @@
 
 - rule: D15
   forbid: 比较框架版本字符串（getFrameworkVersion().equals(...)）或硬编码框架版本号
-  because: 存在两条冲突的 2.x 线；环境判断只走 getApiVersion() + getFrameworkProperties() 位掩码
+  because: 社区分支版本号自成体系（Vector 的 v2.2 ≠ 官方 v2.2.0），公开 GitHub release 又与主线脱节；环境判断只走 getApiVersion() + getFrameworkProperties() 位掩码
   ref: "07-compat-matrix.md §0、§4"
 
 - rule: D16
@@ -119,6 +119,11 @@
   forbid: 用两参 Class.forName 找宿主类；用 getDefaultClassLoader() hook 应用代码
   because: 前者用模块 CL 必然失败；后者在自定义 AppComponentFactory 时拿错 CL
   ref: "05-pitfalls.md #8、#9"
+
+- rule: D23
+  forbid: 在 abiFilters 中包含 x86（32 位 x86）
+  because: v2.0.3 起移除 32 位 x86 支持，包含它会导致 x86 模拟器上框架无法加载模块；x86_64 不受影响
+  ref: "07-compat-matrix.md §1.5"
 ```
 
 ## 2. DO（硬性要求，缺失 = 功能不完整）
@@ -163,8 +168,8 @@
   ref: "05-pitfalls.md #14、#15"
 
 - rule: R10
-  require: 改参数 chain.proceed(newArgs)；改返回值 proceed() 后 return 新值；虚分派用 getInvoker(...)
-  ref: "05-pitfalls.md #19、#20、#23"
+  require: 改参数 chain.proceed(newArgs)；改返回值 proceed() 后 return 新值；虚分派用 getInvoker(...)；取参数强转前先 instanceof 防御
+  ref: "05-pitfalls.md #18、#19、#20、#23"
 
 - rule: R11
   require: 调原方法 getInvoker(m).setType(Invoker.Type.ORIGIN).invoke(...)（默认 FULL 链会递归）
@@ -201,9 +206,9 @@
   ref: "05-pitfalls.md #64、#67"
 
 - rule: R19
-  require: 热重载三件套：单一入口类 + onHotReloading 返回 true（且先完成线程/hook/JNI 清理）+ onHotReloaded 里对旧 handle 做 replaceHook
-  because: 默认 onHotReloading=false 拒绝一切；默认 onHotReloaded 只 unhook
-  ref: "05-pitfalls.md #79-82"
+  require: 热重载三件套：单一入口类 + onHotReloading 返回 true（且先完成线程/hook/JNI 清理）+ onHotReloaded 里对旧 handle 做 replaceHook；setSavedInstanceState 只放 classloader 中立值
+  because: 默认 onHotReloading=false 拒绝一切；默认 onHotReloaded 只 unhook；旧版框架重载异常时不回滚状态（v2.2.0 已修复）
+  ref: "05-pitfalls.md #79-84"
 
 - rule: R20
   require: 反射查找结果缓存到字段；回调内不做 I/O/重活
@@ -217,6 +222,11 @@
 - rule: R22
   require: 发版前过 §4 的 checklist 与 07 册 §5 兼容清单
   ref: "07-compat-matrix.md §5"
+
+- rule: R23
+  require: 模块需 hook HyperOS Runtime 应用或 Android 17+ dex2oat 包装器进程时，在模块文档中声明对兼容 Zygisk Next API 的 Zygisk 实现的依赖（ZygiskNext / ReZygisk / NeoZygisk 三选一）
+  because: 这两类进程常规 Zygisk 拿不到注入；不满足条件时表现为目标进程 hook 静默失效，而非整体崩溃
+  ref: "07-compat-matrix.md §1.2、§1.4"
 ```
 
 ## 3. 判定规则（二选一场景的决策依据）
@@ -275,9 +285,11 @@
 - [ ] 入口类 `public` + `extends XposedModule` + 无参构造器（D02/R02）
 - [ ] `java_init.list` 非空（R03）；`module.prop` 两个 ApiVersion 显式（R04）
 - [ ] `compileOnly(api)`（D03/R01）；`packaging` 两条成对（D04/R01）
-- [ ] Java 17+（sealed interface）；`minSdk >= 26`
+- [ ] Java 17+（sealed interface）；`minSdk >= 26`（编译下限）／按 **28** 规划（框架运行下限，v2.1.1 起）
 - [ ] 混淆启用 → 三条 ProGuard 规则（D05）
 - [ ] Manifest 零 xposed meta-data（D06）
+- [ ] 未使用 `xposedsharedprefs`；Legacy 模块的 NSP 按 `09-legacy-migration.md §7` 处理
+- [ ] `abiFilters` 不含 32 位 `x86`（D23）
 
 **生命周期**
 - [ ] 构造器/字段初始化器里无任何 XposedInterface 调用（D01）
@@ -308,86 +320,6 @@
 
 
 ---
-
-## 5. v2.x Changelog 派生规则（【一手·changelog】）
-
-> 以下规则来自 v2.0.2~v2.2.0 官方 changelog 中明确的行为变更，Agent 生成代码时必须遵守。
-
-### D. 硬性规则（违反即模块失效）
-
-#### V01. API 102 与 Legacy API 物理隔离（v2.0.3）
-
-- **约束**：`targetApiVersion ≥ 102` 的模块**禁止** `import de.robv.android.xposed.*`；Legacy 模块（`targetApiVersion ≤ 101`）**禁止** `import io.github.libxposed.*`。
-- **检测**：在生成的代码中，若 `targetApiVersion=102`，搜索所有 `import` 语句，确保无 `de.robv.android.xposed` 包引用。
-- **修复**：将所有 Legacy API 调用替换为对应的 libxposed API（→ 见 `09 册` 映射表）。
-
-#### V02. x86 架构移除（v2.0.3）
-
-- **约束**：模块 `abiFilters` 中**禁止包含 `x86`**（32 位 x86）。`x86_64` 不受影响。
-- **检测**：在 `app/build.gradle.kts` 的 `ndk.abiFilters` 中检查是否包含 `"x86"`。
-- **修复**：移除 `"x86"`，保留 `"arm64-v8a"`、`"armeabi-v7a"`、`"x86_64"`。
-
-#### V03. minSdk 底线（v2.1.1）
-
-- **约束**：模块 `minSdk` 应设为 **28**（Android 9），不再支持 API 27 及以下。
-- **检测**：在 `app/build.gradle.kts` 的 `defaultConfig.minSdk` 中检查是否 ≥ 28。
-- **修复**：将 `minSdk` 设为 28，移除所有 API 27 的降级逻辑（如 `SDK_INT >= 28` 的分支判断）。
-
-#### V04. NSP 迁移截止（v2.3.0）
-
-- **约束**：使用 New XSharedPreferences 的 Legacy 模块必须在 v2.3.0 发布前完成迁移，否则偏好设置读取将失效。
-- **检测**：在 `AndroidManifest.xml` 中检查是否存在 `xposedsharedprefs` 元数据。
-- **修复**：
-  - 方案 A（推荐）：迁移到 libxposed API 102，使用 `RemotePreferences`。
-  - 方案 B（临时）：在 `module.prop` 中设置 `xposedminversion=82`，删除 `xposedsharedprefs` 元数据。
-
-### E. 防御性规则（建议遵守，提升健壮性）
-
-#### W01. Hook 链参数类型防御（v2.2.0 修复）
-
-- **约束**：在 `beforeHookedMethod`/`afterHookedMethod` 中，对 `param.args[i]` 增加 `instanceof` 检查后再强制转换。
-- **示例**：
-```java
-Object arg = param.args[0];
-if (arg instanceof String) {
-    String str = (String) arg;
-    // 使用 str
-} else {
-    // 降级处理或记录警告
-}
-```
-
-#### W02. findField 异常防御（v2.1.1 修复）
-
-- **约束**：对 `XposedHelpers.findField` 调用统一使用 `try-catch` 包裹，同时捕获 `NoSuchFieldException` 和 `NoSuchFieldError`。
-- **示例**：
-```java
-try {
-    Field f = XposedHelpers.findField(clazz, "fieldName");
-    f.setAccessible(true);
-    // 使用 f
-} catch (NoSuchFieldException | NoSuchFieldError e) {
-    // 降级处理
-}
-```
-
-#### W03. 热重载状态隔离（v2.2.0 修复）
-
-- **约束**：在 `onHotReloading` 的 `setSavedInstanceState` 中，仅传递 ClassLoader 无关的对象（如 `Bundle`、`Map<String, Object>` 基础类型值）。禁止传递由旧模块 ClassLoader 加载的类实例。
-- **检测**：在生成的热重载代码中，检查 `setSavedInstanceState` 的参数类型，确保无自定义类（除非该类由系统 ClassLoader 加载，如 `Bundle`）。
-
-### F. 环境前提规则（特定功能依赖）
-
-#### P01. HyperOS Runtime 注入前提（v2.2.0）
-
-- **约束**：若模块 Hook 目标为 HyperOS Rust Runtime 应用（native-only、非 ART），必须在模块文档中声明依赖"兼容 Zygisk Next API 的 Zygisk 实现"（ZygiskNext / ReZygisk / NeoZygisk 三选一）。
-- **检测**：在生成的模块文档中，若涉及 HyperOS 系统应用 Hook，检查是否包含 ZygiskNext 依赖声明。
-
-#### P02. Android 17 dex2oat 注入前提（v2.2.0）
-
-- **约束**：若模块需要在 Android 17+ 的 dex2oat 包装器进程中 Hook，必须依赖兼容 Zygisk Next API 的实现。
-- **检测**：在生成的模块文档中，若涉及 dex2oat 进程 Hook，检查是否包含 ZygiskNext 依赖声明。
-
 
 ## 未验证 / 未获取到
 
